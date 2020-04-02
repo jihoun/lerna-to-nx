@@ -1,6 +1,6 @@
 {
   "name": "@jihoun/lerna-to-nx",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "An angular schematics that migrates a repository from lerna to nx",
   "scripts": {
     "build": "tsc -p tsconfig.json",
