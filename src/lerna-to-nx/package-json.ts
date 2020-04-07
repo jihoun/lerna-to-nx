@@ -1,24 +1,27 @@
 import {
   SchematicContext,
   SchematicsException,
-  Tree
+  Tree,
+  Rule,
 } from "@angular-devkit/schematics";
 import {
   addPackageJsonDependency,
-  NodeDependencyType
+  NodeDependencyType,
 } from "@schematics/angular/utility/dependencies";
 import {
   appendPropertyInAstObject,
   findPropertyInAstObject,
-  insertPropertyInAstObjectInOrder
+  insertPropertyInAstObjectInOrder,
 } from "@schematics/angular/utility/json-utils";
 import { Observable, of } from "rxjs";
 import { concatMap, map } from "rxjs/operators";
 import { parseJsonAtPath } from "./utility";
 import { get } from "http";
+import { JsonAstObject } from "@angular-devkit/core";
+import { IAngularWorkspace } from ".";
 
 export enum Configs {
-  JsonIndentLevel = 2
+  JsonIndentLevel = 2,
 }
 
 export interface NodePackage {
@@ -27,7 +30,7 @@ export interface NodePackage {
 }
 
 export enum pkgJson {
-  Path = "./package.json"
+  Path = "./package.json",
 }
 
 export interface DeleteNodeDependency {
@@ -46,7 +49,7 @@ export function removeDependencies(
 
       removePackageJsonDependency(tree, {
         type: NodeDependencyType.Dev,
-        name: packageName
+        name: packageName,
       });
 
       return tree;
@@ -70,7 +73,7 @@ export function addDependencies(
       addPackageJsonDependency(tree, {
         type: NodeDependencyType.Dev,
         name,
-        version
+        version,
       });
 
       return tree;
@@ -91,14 +94,14 @@ export function removePackageJsonDependency(
     // Haven't found the dependencies key.
     throw new SchematicsException("Could not find the package.json dependency");
   } else if (depsNode.kind === "object") {
-    const fullPackageString = depsNode.text.split("\n").filter(pkg => {
+    const fullPackageString = depsNode.text.split("\n").filter((pkg) => {
       return pkg.includes(`"${dependency.name}"`);
     })[0];
 
     const commaDangle =
       fullPackageString && fullPackageString.trim().slice(-1) === "," ? 1 : 0;
 
-    const packageAst = depsNode.properties.find(node => {
+    const packageAst = depsNode.properties.find((node) => {
       return node.key.value.toLowerCase() === dependency.name.toLowerCase();
     });
 
@@ -179,10 +182,10 @@ export function getLatestNodeVersion(
 ): Promise<NodePackage> {
   const DEFAULT_VERSION = "latest";
 
-  return new Promise(resolve => {
-    return get(`http://registry.npmjs.org/${packageName}`, res => {
+  return new Promise((resolve) => {
+    return get(`http://registry.npmjs.org/${packageName}`, (res) => {
       let rawData = "";
-      res.on("data", chunk => (rawData += chunk));
+      res.on("data", (chunk) => (rawData += chunk));
       res.on("end", () => {
         try {
           const response = JSON.parse(rawData);
@@ -202,4 +205,61 @@ export function getLatestNodeVersion(
   ): NodePackage {
     return { name, version };
   }
+}
+
+export function mergePackageJson(
+  tree: Tree,
+  context: SchematicContext,
+  jsonAst: JsonAstObject,
+  whitelist: string[]
+): Tree {
+  ["dependencies", "peerDependencies"].forEach((dependencyType) => {
+    const node = findPropertyInAstObject(jsonAst, dependencyType);
+    if (node?.kind === "object") {
+      addPropertyToPackageJson(
+        tree,
+        context,
+        "dependencies",
+        pluckKeys(node.value, whitelist)
+      );
+    }
+  });
+  const node = findPropertyInAstObject(jsonAst, "devDependencies");
+  if (node?.kind === "object") {
+    addPropertyToPackageJson(
+      tree,
+      context,
+      "devDependencies",
+      pluckKeys(node.value, whitelist)
+    );
+  }
+  return tree;
+}
+
+function pluckKeys(
+  obj: { [k: string]: any },
+  keys: string[]
+): { [k: string]: any } {
+  const res: { [k: string]: any } = { ...obj };
+  keys.forEach((key) => {
+    if (res[key]) {
+      delete res[key];
+    }
+  });
+  return res;
+}
+export function mergePackageJsonFiles(
+  angularPackagesPath: IAngularWorkspace[]
+): Rule {
+  return (tree: Tree, context: SchematicContext): Tree => {
+    const whitelist = angularPackagesPath.map((pack) => pack.packageName);
+    angularPackagesPath.forEach((pack) => {
+      tree = mergePackageJson(tree, context, pack.packageJson, whitelist);
+      tree.rename(
+        `${pack.path}/package.json`,
+        `${pack.path}/package.json.${new Date().getTime()}~`
+      );
+    });
+    return tree;
+  };
 }

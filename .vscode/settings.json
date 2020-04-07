@@ -1,0 +1,7 @@
+{
+  "files.exclude": {
+    "src/lerna-to-nx/*.d.ts": true,
+    "src/lerna-to-nx/*.js": true,
+    "src/lerna-to-nx/*.js.map": true
+  }
+}

@@ -1,22 +1,28 @@
 import { JsonParseMode, parseJson } from "@angular-devkit/core";
 import {
   WorkspaceSchema,
-  WorkspaceProject
+  WorkspaceProject,
 } from "@angular-devkit/core/src/experimental/workspace";
-import { SchematicsException, Tree } from "@angular-devkit/schematics";
+import {
+  SchematicsException,
+  Tree,
+  Rule,
+  SchematicContext,
+} from "@angular-devkit/schematics";
+import { IAngularWorkspace } from ".";
 // import { JestOptions } from "./utility";
 
 export enum Paths {
-  AngularJson = "./angular.json"
+  AngularJson = "./angular.json",
 }
 
 function getWorkspacePath(tree: Tree, dir: string): string {
   const possibleFiles = [
     "/angular.json",
     "/.angular.json",
-    "/angular-cli.json"
-  ].map(p => `${dir}${p}`);
-  const path = possibleFiles.filter(path => tree.exists(path))[0];
+    "/angular-cli.json",
+  ].map((p) => `${dir}${p}`);
+  const path = possibleFiles.filter((path) => tree.exists(path))[0];
 
   return path;
 }
@@ -67,7 +73,7 @@ export function mergeWorkspace(
   dest: WorkspaceSchema
 ): WorkspaceSchema {
   dest.projects = { ...source.projects, ...dest.projects };
-  ["cli", "schematics", "architect", "targets"].forEach(key => {
+  ["cli", "schematics", "architect", "targets"].forEach((key) => {
     // @ts-ignore
     if (source[key] !== undefined) {
       // @ts-ignore
@@ -159,7 +165,7 @@ function moveWorkspaceProject(project: WorkspaceProject, path: string) {
             config.fileReplacements = config?.fileReplacements.map(
               (r: any) => ({
                 replace: prependPath(path, r.replace),
-                with: prependPath(path, r.with)
+                with: prependPath(path, r.with),
               })
             );
           }
@@ -181,7 +187,7 @@ function prependPathOnArray(
   prefix: string,
   path: (string | { [k: string]: string })[]
 ): (string | { [k: string]: string })[] {
-  return path.map(p => {
+  return path.map((p) => {
     if (typeof p === "string") {
       return prependPath(prefix, p);
     }
@@ -207,4 +213,42 @@ function genericPrependPath(
     return prependPathOnArray(prefix, path);
   }
   return prependPath(prefix, path);
+}
+
+export function mergeAngularJsonFiles(
+  angularPackagesPath: IAngularWorkspace[]
+): Rule {
+  return (tree: Tree, context: SchematicContext): Tree => {
+    context.logger.debug(
+      "Merging packages angular.json into master angular.json..."
+    );
+    const workspace: WorkspaceSchema = {
+      $schema: "./node_modules/@angular/cli/lib/config/schema.json",
+      version: 1,
+      projects: {},
+    };
+    angularPackagesPath.forEach((pack: IAngularWorkspace) => {
+      importAngularProject(tree, context, pack, workspace);
+      tree.delete(`${pack.path}/angular.json`);
+    });
+    tree.create("angular.json", JSON.stringify(workspace, null, 2));
+    return tree;
+  };
+}
+
+function importAngularProject(
+  tree: Tree,
+  _context: SchematicContext,
+  pack: IAngularWorkspace,
+  master: WorkspaceSchema
+  // nxJson: any
+): { tree: Tree; workspace: WorkspaceSchema } {
+  if (!pack.workspace) {
+    throw new SchematicsException(
+      "should not call this method without angular workspace"
+    );
+  }
+  const packageWorkspace = moveWorkspace(pack.workspace, pack.path);
+  master = mergeWorkspace(packageWorkspace, master);
+  return { tree, workspace: master };
 }

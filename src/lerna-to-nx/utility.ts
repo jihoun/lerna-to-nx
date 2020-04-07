@@ -3,7 +3,8 @@ import {
   JsonAstObject,
   JsonParseMode,
   parseJsonAst,
-  Path
+  Path,
+  JsonAstNode,
 } from "@angular-devkit/core";
 import { SchematicsException, Tree } from "@angular-devkit/schematics";
 import { getPackageJsonDependency } from "@schematics/angular/utility/dependencies";
@@ -22,7 +23,7 @@ export function getAngularVersion(tree: Tree): number {
 
   const version =
     packageNode &&
-    packageNode.version.split("").find(char => !!parseInt(char, 10));
+    packageNode.version.split("").find((char) => !!parseInt(char, 10));
 
   return version ? +version : 0;
 }
@@ -57,7 +58,11 @@ export function safeFileDelete(tree: Tree, path: string): boolean {
   }
 }
 
-export function parseJsonAtPath(tree: Tree, path: string): JsonAstObject {
+export function parseJsonAtPath(
+  tree: Tree,
+  path: string,
+  mode: JsonParseMode = JsonParseMode.Strict
+): JsonAstObject {
   const buffer = tree.read(path);
 
   if (buffer === null) {
@@ -66,7 +71,12 @@ export function parseJsonAtPath(tree: Tree, path: string): JsonAstObject {
 
   const content = buffer.toString();
 
-  const json = parseJsonAst(content, JsonParseMode.Strict);
+  let json: JsonAstNode;
+  try {
+    json = parseJsonAst(content, mode);
+  } catch (err) {
+    throw new SchematicsException(`${path} ${JSON.stringify(err)}`);
+  }
   if (json.kind != "object") {
     throw new SchematicsException(
       "Invalid package.json. Was expecting an object"
@@ -74,4 +84,12 @@ export function parseJsonAtPath(tree: Tree, path: string): JsonAstObject {
   }
 
   return json;
+}
+
+export function backwardPath(path: string): string {
+  const splits = path.split("/");
+  const segments = splits.map((segment) => {
+    return [".", ".."].includes(segment) ? segment : "..";
+  });
+  return segments.join("/");
 }
