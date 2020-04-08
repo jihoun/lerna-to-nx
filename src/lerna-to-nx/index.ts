@@ -7,15 +7,13 @@ import {
   SchematicsException,
   Tree,
 } from "@angular-devkit/schematics";
-import { NodePackageInstallTask } from "@angular-devkit/schematics/tasks";
 import { findPropertyInAstObject } from "@schematics/angular/utility/json-utils";
 import * as glob from "glob";
-import { concat, Observable } from "rxjs";
 import { createNxFile } from "./nx";
 import {
-  addDependencies,
+  addPropertyToPackageJson,
   mergePackageJsonFiles,
-  removeDependencies,
+  // removeDependencies,
 } from "./package-json";
 import { updateTsConfigFiles } from "./ts-config";
 import { parseJsonAtPath } from "./utility";
@@ -63,7 +61,7 @@ export function lernaToNx(_options: any): Rule {
 
     return chain([
       mergePackageJsonFiles(packages),
-      // updateDependencies(),
+      updateDependencies(),
       mergeAngularJsonFiles(packages.filter((pack) => pack.workspace)),
       createNxFile(packages, "perxtech"), //TODO fetch it from package.json
       updateTsConfigFiles(packages),
@@ -72,12 +70,12 @@ export function lernaToNx(_options: any): Rule {
 }
 
 export function updateDependencies(): Rule {
-  return (tree: Tree, context: SchematicContext): Observable<Tree> => {
+  return (tree: Tree, context: SchematicContext): Tree => {
     context.logger.debug("Updating dependencies...");
-    context.addTask(new NodePackageInstallTask());
-    return concat(
-      removeDependencies(tree, context, ["lerna"]),
-      addDependencies(tree, context, ["@nrwl/workspace"])
-    );
+    // removeDependencies(tree, context, ["lerna"]); //todo
+    addPropertyToPackageJson(tree, context, "devDependencies", {
+      "@nrwl/workspace": "^8.0.0",
+    }); //todo match @nrwl/workspace version with @angular/cli version
+    return tree;
   };
 }

@@ -8,11 +8,7 @@ import {
   addPackageJsonDependency,
   NodeDependencyType,
 } from "@schematics/angular/utility/dependencies";
-import {
-  appendPropertyInAstObject,
-  findPropertyInAstObject,
-  insertPropertyInAstObjectInOrder,
-} from "@schematics/angular/utility/json-utils";
+import { findPropertyInAstObject } from "@schematics/angular/utility/json-utils";
 import { Observable, of } from "rxjs";
 import { concatMap, map } from "rxjs/operators";
 import { parseJsonAtPath } from "./utility";
@@ -29,7 +25,7 @@ export interface NodePackage {
   version: string;
 }
 
-export enum pkgJson {
+export enum PkgJson {
   Path = "./package.json",
 }
 
@@ -86,9 +82,9 @@ export function removePackageJsonDependency(
   tree: Tree,
   dependency: DeleteNodeDependency
 ): void {
-  const packageJsonAst = parseJsonAtPath(tree, pkgJson.Path);
+  const packageJsonAst = parseJsonAtPath(tree, PkgJson.Path);
   const depsNode = findPropertyInAstObject(packageJsonAst, dependency.type);
-  const recorder = tree.beginUpdate(pkgJson.Path);
+  const recorder = tree.beginUpdate(PkgJson.Path);
 
   if (!depsNode) {
     // Haven't found the dependencies key.
@@ -128,48 +124,34 @@ export function addPropertyToPackageJson(
   propertyName: string,
   propertyValue: { [key: string]: any }
 ) {
-  const packageJsonAst = parseJsonAtPath(tree, pkgJson.Path);
-  const pkgNode = findPropertyInAstObject(packageJsonAst, propertyName);
-  const recorder = tree.beginUpdate(pkgJson.Path);
-
-  if (!pkgNode) {
-    // outer node missing, add key/value
-    appendPropertyInAstObject(
-      recorder,
-      packageJsonAst,
-      propertyName,
-      propertyValue,
-      Configs.JsonIndentLevel
-    );
-  } else if (pkgNode.kind === "object") {
-    // property exists, update values
-    for (let [key, value] of Object.entries(propertyValue)) {
-      const innerNode = findPropertyInAstObject(pkgNode, key);
-
-      if (!innerNode) {
-        // script not found, add it
-        context.logger.debug(`creating ${key} with ${value}`);
-
-        insertPropertyInAstObjectInOrder(
-          recorder,
-          pkgNode,
-          key,
-          value,
-          Configs.JsonIndentLevel
-        );
-      } else {
-        // script found, overwrite value
-        context.logger.debug(`overwriting ${key} with ${value}`);
-
-        const { end, start } = innerNode;
-
-        recorder.remove(start.offset, end.offset - start.offset);
-        recorder.insertRight(start.offset, JSON.stringify(value));
-      }
-    }
+  const pkgJsonBuffer = tree.read(PkgJson.Path);
+  if (!pkgJsonBuffer) {
+    throw new SchematicsException("Not a lerna workspace");
   }
 
-  tree.commitUpdate(recorder);
+  const pkgJson = JSON.parse(pkgJsonBuffer.toString());
+  let node = pkgJson[propertyName];
+  if (!pkgJson[propertyName]) {
+    context.logger.debug(`Creating section ${propertyName} in package.json`);
+    node = {};
+    pkgJson[propertyName] = node;
+  }
+  for (let [key, value] of Object.entries(
+    propertyValue
+  ).sort(([a, _va]: [string, any], [b, _vb]: [string, any]) =>
+    a.localeCompare(b)
+  )) {
+    if (!node[key]) {
+      context.logger.debug(`adding ${key} with ${value}`);
+    } else {
+      context.logger.debug(`overwriting ${key} with ${value}`);
+    }
+    node[key] = value;
+  }
+  tree.overwrite(
+    PkgJson.Path,
+    JSON.stringify(pkgJson, null, Configs.JsonIndentLevel)
+  );
 }
 
 /**
